@@ -21,7 +21,9 @@ The main narrative, also present in the book PDF, presents standard program-proo
   * `LogicProgramming.v`: 'eauto' and friends, to automate proofs via logic programming
 * Chapter 8: `AbstractInterpretation.v`
 * Chapter 9: `CompilerCorrectness.v`
+  * `SubsetTypes.v`
 * Chapter 10: `LambdaCalculusAndTypeSoundness.v`
+  * `DependentInductiveTypes.v`
 * Chapter 11: `TypesAndMutation.v`
 * Chapter 12: `HoareLogic.v`
 * Chapter 13: `DeepAndShallowEmbeddings.v`
