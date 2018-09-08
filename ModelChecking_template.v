@@ -1,4 +1,4 @@
-(** Formal Reasoning About Programs <http://adam.chlipala.net/frap/>
+  (** Formal Reasoning About Programs <http://adam.chlipala.net/frap/>
   * Chapter 5: Model Checking
   * Author: Adam Chlipala
   * License: https://creativecommons.org/licenses/by-nc-nd/4.0/ *)
@@ -11,11 +11,14 @@ Set Implicit Arguments.
 (* Coming up with invariants ourselves can be tedious!  Let's investigate how we
  * can automate the choice of invariants, for systems with only finitely many
  * reachable states.  This style is known as model checking. *)
+ 
+(* retains all cases of another *)
 Definition oneStepClosure_current {state} (sys : trsys state)
            (invariant1 invariant2 : state -> Prop) :=
   forall st, invariant1 st
              -> invariant2 st.
 
+(* add all new recheable states from the original set *)
 Definition oneStepClosure_new {state} (sys : trsys state)
            (invariant1 invariant2 : state -> Prop) :=
   forall st st', invariant1 st
@@ -36,6 +39,8 @@ Proof.
   propositional.
 Qed.
 
+(* Procedure to find an invariant: Start with init states as candidate. take one-step
+ * closure, again, ... termination: one-step closure brings back the original *)
 Theorem oneStepClosure_done : forall state (sys : trsys state) (invariant : state -> Prop),
   (forall st, sys.(Initial) st -> invariant st)
   -> oneStepClosure sys invariant invariant
@@ -65,26 +70,26 @@ Inductive multiStepClosure {state} (sys : trsys state)
     -> multiStepClosure sys inv' inv''
     -> multiStepClosure sys inv inv''.
 
+
 Lemma multiStepClosure_ok' : forall state (sys : trsys state) (inv inv' : state -> Prop),
-  multiStepClosure sys inv inv'
+  multiStepClosure sys inv inv'  (* forall inv *)
   -> (forall st, sys.(Initial) st -> inv st)
   -> invariantFor sys inv'.
 Proof.
-  induct 1; simplify.
-
-  apply oneStepClosure_done.
-  assumption.
-  assumption.
-
-  apply IHmultiStepClosure.
-  simplify.
+  simplify. induct H.
+  
+  apply oneStepClosure_done; assumption.
+  
+  apply IHmultiStepClosure; simplify.
   unfold oneStepClosure, oneStepClosure_current in *.
   propositional.
   apply H3.
   apply H1.
-  assumption.
+  apply H2.
 Qed.
 
+(* mutli-step closure is a sound way to find an invariant for any transition system:
+ * if it terminates, it is correct *)
 Theorem multiStepClosure_ok : forall state (sys : trsys state) (inv : state -> Prop),
   multiStepClosure sys sys.(Initial) inv
   -> invariantFor sys inv.
@@ -94,6 +99,21 @@ Proof.
   eassumption.
   propositional.
 Qed.
+(* [constant [x1; ..., xN]] for the set [{x1, ..., xN}] *)
+Print constant. 
+(* fun (A : Type) (ls : list A) (x : A) => In x ls
+     : forall A : Type, list A -> set A  *)
+Print In.
+(* In = 
+fun A : Type =>
+fix In (a : A) (l : list A) {struct l} : Prop :=
+  match l with
+  | [] => False
+  | b :: m => b = a \/ In a m
+  end
+     : forall A : Type, A -> list A -> Prop
+*)
+Print set . (* fun A : Type => A -> Prop *)
 
 Theorem oneStepClosure_empty : forall state (sys : trsys state),
   oneStepClosure sys (constant nil) (constant nil).
@@ -101,14 +121,19 @@ Proof.
   unfold oneStepClosure, oneStepClosure_current, oneStepClosure_new; propositional.
 Qed.
 
+(* Computing one-step closure for finite sets: close separately over each elem of the set.
+ * [inv1]: where we might get from [st] in one step
+ * [sts]
+ *)
 Theorem oneStepClosure_split : forall state (sys : trsys state) st sts (inv1 inv2 : state -> Prop),
   (forall st', sys.(Step) st st' -> inv1 st')
   -> oneStepClosure sys (constant sts) inv2
   -> oneStepClosure sys (constant (st :: sts)) ({st} \cup inv1 \cup inv2).
 Proof.
-  unfold oneStepClosure, oneStepClosure_current, oneStepClosure_new; propositional.
-
-  invert H0.
+  unfold oneStepClosure, oneStepClosure_current, oneStepClosure_new.
+  propositional.
+  (* inversion H0. subst. *)
+  invert H0. (* H0 : constant (st :: sts) st0 *)
 
   left.
   (* [left] and [right]: prove a disjunction by proving the left or right case,
@@ -156,6 +181,8 @@ Definition fact_correct (original_input : nat) (st : fact_state) : Prop :=
   end.
 
 (* Let's also restate the initial-states set using a singleton set. *)
+(* Inductive fact_init (original_input : nat) : fact_state -> Prop :=
+    FactInit : fact_init original_input (WithAccumulator original_input 1) *)
 Theorem fact_init_is : forall original_input,
   fact_init original_input = {WithAccumulator original_input 1}.
 Proof.
@@ -163,7 +190,7 @@ Proof.
   apply sets_equal; simplify.
   propositional.
 
-  invert H.
+  invert H. (* H : fact_init original_input x *)
   equality.
 
   rewrite <- H0.
@@ -175,31 +202,63 @@ Qed.
 Theorem factorial_ok_2 :
   invariantFor (factorial_sys 2) (fact_correct 2).
 Proof.
-Admitted.
+  eapply invariant_weaken.
+  (* strengthen to the inductive invariant *)
+  apply multiStepClosure_ok; simplify.
+  
+  rewrite fact_init_is.
+  (* phrase current candidate invariant(initial) explicitly as a finite set to take
+   * one-step closure *)
+  
+  (* reachable state after one step *)
+  eapply MscStep.
+  apply oneStepClosure_split; simplify.
+  invert H; simplify.
+  apply singleton_in.
+  apply oneStepClosure_empty.
+
+  (* 2 steps *)
+  simplify.
+  eapply MscStep.
+  apply oneStepClosure_split; simplify.
+  invert H; simplify.
+  apply singleton_in.
+  apply oneStepClosure_split; simplify.
+  invert H; simplify.
+  apply singleton_in.
+  apply oneStepClosure_empty.
+  
+  (* 3 steps *)
+  simplify.
+  eapply MscStep.
+  apply oneStepClosure_split; simplify.
+  invert H; simplify.
+  apply singleton_in.
+  apply oneStepClosure_split; simplify.
+  invert H; simplify.
+  apply singleton_in.
+  apply oneStepClosure_split; simplify.
+  invert H; simplify.
+  apply singleton_in.
+  apply oneStepClosure_empty.
+  
+  (* candidate invar is closed under 1 step *)
+  simplify.
+  apply MscDone.
+  apply prove_oneStepClosure; simplify.
+  propositional.
+  propositional; invert H0; try equality.
+  invert H; equality.
+  invert H1; try equality.
+  
+  (* this invariant implies the one we started with *)
+  simplify.
+  propositional; subst; simplify; equality.
+  
+Qed.
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-(* BEGIN CODE THAT WILL NOT BE EXPLAINED IN DETAIL! *)
-
+(* automation for trsys with finite states *)
 Hint Rewrite fact_init_is.
 
 Ltac model_check_done :=
@@ -220,7 +279,7 @@ Qed.
 
 Ltac singletoner :=
   repeat match goal with
-         | _ => apply singleton_in
+         | [ |- _ ?S ] => idtac S; apply singleton_in
          | [ |- (_ \cup _) _ ] => apply singleton_in_other
          end.
 
@@ -291,6 +350,18 @@ Qed.
 
 
 (** * Abstraction *)
+(* <<
+   int global = 0;
+ 
+   thread() {
+     int local;
+
+     while (true) {
+       local = global;
+       global = local + 2;
+     }
+   }
+   >>*)
 
 Inductive isEven : nat -> Prop :=
 | EvenO : isEven 0
@@ -318,6 +389,7 @@ Definition add2_sys1 := {|
 
 Definition add2_sys := parallel add2_sys1 add2_sys1.
 
+(* invariant *)
 Definition add2_correct (st : threaded_state nat (add2_thread * add2_thread)) :=
   isEven st.(Shared).
 
@@ -350,6 +422,8 @@ Inductive invariantViaSimulation state1 state2 (R : state1 -> state2 -> Prop)
 
 (* By way of a lemma, let's prove that, given a simulation, any
  * invariant-via-simulation really is an invariant for the original system. *)
+ 
+(* simulation -> trc *)
 Lemma invariant_simulates' : forall state1 state2 (R : state1 -> state2 -> Prop)
   (sys1 : trsys state1) (sys2 : trsys state2),
   (forall st1 st2, R st1 st2
@@ -360,8 +434,8 @@ Lemma invariant_simulates' : forall state1 state2 (R : state1 -> state2 -> Prop)
                       -> forall st2, R st1 st2
                                      -> exists st2', R st1' st2'
                                                      /\ sys2.(Step)^* st2 st2'.
-Proof.
-  induct 2.
+Proof. 
+  induct 2. (* sys1.(Step)^* st1 st1' *)
 
   simplify.
   exists st2.
@@ -371,9 +445,13 @@ Proof.
 
   simplify.
   eapply H in H2.
-  first_order.
-  (* [first_order]: simplify first-order logic structure.  Be forewarned: this
-   *   one is especially likely to run forever! *)
+  (* [apply term in ident]: match the conclusion of the type of ident against a
+   * non-dependent premise of the type of term, trying from right to left. If it
+   * succeeds, replace by the conclusion of the type of term. also returns as
+   * many subgoals as the number of other non-dependent premises in the type of
+   * term and of the non-dependent premises of the type of ident.*)
+  first_order. (* [exists st2' : state2, .. => x0]*)
+  (* [first_order]: simplify first-order logic structure. warning: may not terminate *)
   apply IHtrc in H2.
   first_order.
   exists x1.
@@ -392,37 +470,33 @@ Theorem invariant_simulates : forall state1 state2 (R : state1 -> state2 -> Prop
 Proof.
   simplify.
   invert H.
+  (* econstructor. not here. why? unification?  *)
   unfold invariantFor; simplify.
   apply H1 in H.
   first_order.
+  unfold invariantFor in H0. (* ... (Step sys2) ^* s s' -> inv2 s' *)
   apply invariant_simulates' with (sys2 := sys2) (R := R) (st2 := x) in H3; try assumption.
+  (* [H3 : exists st2' : state2, R s' st2' /\ (Step sys2) ^* x st2'] *)
   first_order.
-  unfold invariantFor in H0.
   apply H0 with (s' := x0) in H4; try assumption.
   econstructor.
   eassumption.
   assumption.
 Qed.
 
-Theorem add2_ok :
-  invariantFor add2_sys add2_correct.
-Proof.
-Admitted.
+(* abstrcted transition system *)
+(* <<
+    bool global = true;
 
+    thread() {
+      bool local;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+      while (true) {
+        local = global;
+        global = local;
+      }
+    }
+   >> *)
 
 Inductive add2_bthread :=
 | BRead
@@ -446,14 +520,14 @@ Definition add2_bsys1 := {|
 
 Definition add2_bsys := parallel add2_bsys1 add2_bsys1.
 
-(* This invariant formalizes the connection between local states of threads, in
- * the original and abstracted systems. *)
+(* connection between local states of threads in the original and
+ * abstracted systems. *)
 Inductive R_private1 : add2_thread -> add2_bthread -> Prop :=
 | RpRead : R_private1 Read BRead
 | RpWrite : forall n b, (b = true <-> isEven n)
                         -> R_private1 (Write n) (BWrite b).
 
-(* We lift [R_private1] to a relation over whole states. *)
+(* relatetion of whole state *)
 Inductive add2_R : threaded_state nat (add2_thread * add2_thread)
                    -> threaded_state bool (add2_bthread * add2_bthread)
                    -> Prop :=
@@ -462,13 +536,13 @@ Inductive add2_R : threaded_state nat (add2_thread * add2_thread)
   -> R_private1 th1 th1'
   -> R_private1 th2 th2'
   -> add2_R {| Shared := n; Private := (th1, th2) |}
-            {| Shared := b; Private := (th1', th2') |}.
+           {| Shared := b; Private := (th1', th2') |}.
 
-(* Let's also recharacterize the initial states via a singleton set. *)
+(* initial states as a singleton set *)
 Theorem add2_init_is :
-  parallel_init add2_binit add2_binit = { {| Shared := true; Private := (BRead, BRead) |} }.
+  parallel_init add2_binit add2_binit
+  = { {| Shared := true; Private := (BRead, BRead) |}}.
 Proof.
-  simplify.
   apply sets_equal; simplify.
   propositional.
 
@@ -483,24 +557,18 @@ Proof.
   constructor.
 Qed.
 
-(* We ask Coq to remember this lemma as a hint, which will be used by the
- * model-checking tactics that we refrain from explaining in detail. *)
+(* give the lemma as a hint, used in model-check tactics *)
 Hint Rewrite add2_init_is.
 
-(* Now, let's verify the original system. *)
-(*Theorem add2_ok :
+Theorem add2_ok :
   invariantFor add2_sys add2_correct.
 Proof.
-  (* First step: strengthen the invariant.  We leave an underscore for the
-   * unknown invariant, to be found by model checking. *)
+  (* strengthen the invariant *)
   eapply invariant_weaken with (invariant1 := invariantViaSimulation add2_R _).
-
-  (* One way to find an invariant-by-simulation is to find an invariant for the
-   * abstracted system, as this step asks to do. *)
+  (* find the invar for abstracted system *)
   apply invariant_simulates with (sys2 := add2_bsys).
 
-  (* Now we must prove that the simulation via [add2_R] is valid, which is
-   * routine. *)
+  (* prove simulation *)
   constructor; simplify.
 
   invert H.
@@ -517,7 +585,7 @@ Proof.
   invert H.
   invert H0; simplify.
 
-  invert H7.
+  invert H7. 
 
   invert H2.
   exists {| Shared := b; Private := (BWrite b, th2') |}.
@@ -571,25 +639,15 @@ Proof.
   constructor.
   constructor.
 
-  (* OK, we're glad to have that over with!  Such a process could also be
-   * automated, but we won't bother doing so here.  However, we are now in a
-   * good state, where our model checker can find the invariant
-   * automatically. *)
+  (* find invar *)
   model_check_infer.
-  (* It finds exactly four reachable states.  We finish by showing that they all
-   * obey the original invariant. *)
 
-  invert 1.
+  (* this invar implies original invar *)
+  invert 1. 
   invert H0.
   simplify.
   unfold add2_correct.
   simplify.
-  propositional; subst.
-
-  invert H.
-  propositional.
-
-  invert H1.
   propositional.
 
   invert H.
@@ -597,11 +655,37 @@ Proof.
 
   invert H1.
   propositional.
-Qed.*)
+
+  invert H.
+  propositional.
+
+  invert H1.
+  propositional.
+
+Qed.
+
 
 
 (** * Another abstraction example *)
 
+(*
+ * <<
+    f(int n) {
+      int i, j;
+
+      i = 0;
+      j = 0;
+      while (n > 0) {
+        i = i + n;
+        j = j + n;
+        n = n - 1;
+      }
+    }
+   >>
+ * prove that "i" and "j" are always equal at the end. *)
+
+
+(* transition system *)
 Inductive pc :=
 | i_gets_0
 | j_gets_0
@@ -685,34 +769,6 @@ Definition loopy_correct (st : state) :=
   st.(Pc) = Done -> st.(Vars).(I) = st.(Vars).(J).
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 (* Spoiler alert: here's a good abstraction! *)
 Inductive absvars :=
 | Unknown
@@ -743,7 +799,7 @@ Inductive absstep : absstate -> absstate -> Prop :=
 | AStep_j_gets_0_Other : forall vs,
   vs <> i_is_0
   -> absstep {| APc := j_gets_0; AVars := vs |}
-             {| APc := Loop; AVars := Unknown |}
+             {| APc := Loop; AVars := Unknown |} (* for contradiction *)
 | AStep_Loop_done : forall vs,
   absstep {| APc := Loop; AVars := vs |}
           {| APc := Done; AVars := vs |}
@@ -852,8 +908,8 @@ Proof.
   (* We get 7 neat little states, one per program counter.  Next, we prove that
    * each of them implies the original invariant. *)
 
-  invert 1. (* Note that this [1] means "first premise below the double
-             * line." *)
+  invert 1.
+
   invert H0.
   unfold loopy_correct.
   simplify.
@@ -881,6 +937,14 @@ Qed.
 
 
 (** * Modularity *)
+(* Sound modeling of complex trsys:
+ * - abstraction
+ * - *modular decomposition, combine invars
+ *
+ * Intrumenting a step relation to consider interference (actions that other threads
+ * b/w steps of the thread that we focus on. Parametrize the relation on [inv] of
+ * shared state (might be changed by the other threads but satisfies [inv]).
+ *)
 
 Inductive stepWithInterference shared private (inv : shared -> Prop)
           (step : threaded_state shared private -> threaded_state shared private -> Prop)
@@ -908,9 +972,9 @@ Definition withInterference shared private (inv : shared -> Prop)
   Step := stepWithInterference inv sys.(Step)
 |}.
 
-(* Tired of simulation proofs yet?  Then you'll love this theorem, which shows
- * a free simulation for any use of [withInterference]!  We even get to pick the
- * trivial simulation relation, state equality. *)
+(* trivial simulation for any use of [withInterference] with state equality as
+ * the simulation relation.
+ *)
 Theorem withInterference_abstracts : forall shared private (inv : shared -> Prop)
                                            (sys : trsys (threaded_state shared private)),
   simulates (fun st st' => st = st') sys (withInterference inv sys).
@@ -921,9 +985,10 @@ Proof.
   exists st1; propositional.
 
   exists st1'; propositional.
-  constructor.
+  constructor. (* StepSelf *)
   equality.
 Qed.
+
 
 Lemma withInterference_parallel_init : forall shared private1 private2
                                           (invs : shared -> Prop)
@@ -1113,6 +1178,7 @@ Proof.
   constructor.
 Qed.
 
+(* invar of parallel system from invar of each constituent thread *)
 Theorem withInterference_parallel : forall shared private1 private2
                                            (invs : shared -> Prop)
                                            (sys1 : trsys (threaded_state shared private1))
@@ -1128,14 +1194,13 @@ Proof.
   simplify.
   invert H1.
 
-  (* [assert P]: first prove proposition [P], then continue with it as a new
-   *   hypothesis. *)
   assert ((withInterference invs sys1).(Step)^*
              {| Shared := sh; Private := pr1 |}
              {| Shared := s'.(Shared); Private := fst s'.(Private) |}).
-  apply withInterference_parallel_init with (sys2 := sys2)
-                                            (st := {| Shared := sh; Private := (pr1, pr2) |})
-                                            (st2 := {| Shared := sh; Private := pr2 |});
+  apply withInterference_parallel_init with
+      (sys2 := sys2)
+      (st := {| Shared := sh; Private := (pr1, pr2) |})
+      (st2 := {| Shared := sh; Private := pr2 |});
     simplify; propositional.
   apply H in H1; propositional.
   apply H0 in H1; propositional.
@@ -1157,6 +1222,19 @@ Proof.
   apply H in H1; try assumption.
 Qed.
 
+(* Consider a program with many threads running calls to this function.
+ * <<
+    int global = 0;
+    f() {
+      int local = 0;
+      while (true) {
+        local = global;
+        local = 3 + local;
+        local = 7 + local;
+        global = local;
+      }
+    }
+   >> *)
 
 Inductive twoadd_pc := ReadIt | Add3 | Add7 | WriteIt.
 
@@ -1373,34 +1451,19 @@ Qed.
 Theorem twoadd2_ok :
   invariantFor (parallel twoadd_sys twoadd_sys) (twoadd_correct (private := _)).
 Proof.
-Admitted.
+  eapply invariant_weaken.
 
+  eapply invariant_simulates.
 
+  apply withInterference_abstracts.
+  apply withInterference_parallel.
+  apply twoadd_ok.
+  apply twoadd_ok.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  unfold twoadd_correct.
+  invert 1.
+  assumption.
+Qed.
 
 
 (* In fact, this modularity technique is so powerful that we now get correctness
@@ -1408,11 +1471,17 @@ Admitted.
  * won't explain, but which is able to derive correctness for any number of
  * threads, just by repeating use of [withInterference_parallel] and
  * [twoadd_ok]. *)
-Ltac twoadd := eapply invariant_weaken; [ eapply invariant_simulates; [
-                                          apply withInterference_abstracts
-                                          | repeat (apply withInterference_parallel
-                                                    || apply twoadd_ok) ]
-                                        | unfold twoadd_correct; invert 1; assumption ].
+(* expr ; [expr*|] : as many expr in the list as goals generated by the
+ * application of the first expr to each of the individual goals independently.
+ *)
+Ltac twoadd :=
+  eapply invariant_weaken;
+  [ eapply invariant_simulates;
+    [ apply withInterference_abstracts
+    | repeat (apply withInterference_parallel || apply twoadd_ok)
+    ]
+  | unfold twoadd_correct; invert 1; assumption
+  ].
 
 (* For instance, let's verify the three-thread version. *)
 Theorem twoadd3_ok :
