@@ -134,6 +134,8 @@ Ltac eval1 :=
   || (apply EvalIfFalse; [ simplify; equality | ])
   || (eapply EvalWhileTrue; [ simplify; equality | | ])
   || (apply EvalWhileFalse; [ simplify; equality ]).
+(* [simplify; equality] to [interp] terms *)
+
 Ltac evaluate := simplify; try equality; repeat eval1.
 
 Theorem factorial_2_snazzy : exists v, eval ($0 $+ ("input", 2)) factorial v
@@ -144,13 +146,6 @@ Proof.
   evaluate.
 Qed.
 
-Theorem factorial_3 : exists v, eval ($0 $+ ("input", 3)) factorial v
-                                /\ v $? "output" = Some 6.
-Proof.
-  eexists; propositional.
-  evaluate.
-  evaluate.
-Qed.
 
 (* Instead of chugging through these relatively slow individual executions,
  * let's prove once and for all that [factorial] is correct. *)
@@ -160,41 +155,17 @@ Fixpoint fact (n : nat) : nat :=
   | S n' => n * fact n'
   end.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 Example factorial_loop :=
   while "input" loop
     "output" <- "output" * "input";;
     "input" <- "input" - 1
   done.
 
-Lemma factorial_loop_correct : forall n v out, v $? "input" = Some n
-  -> v $? "output" = Some out
-  -> exists v', eval v factorial_loop v'
-                /\ v' $? "output" = Some (fact n * out).
+Lemma factorial_loop_correct : forall n v out,
+    v $? "input" = Some n
+    -> v $? "output" = Some out
+    -> exists v', eval v factorial_loop v'
+            /\ v' $? "output" = Some (fact n * out).
 Proof.
   induct n; simplify.
 
@@ -207,8 +178,10 @@ Proof.
   f_equal.
   ring.
 
-  assert (exists v', eval (v $+ ("output", out * S n) $+ ("input", n)) factorial_loop v'
-                     /\ v' $? "output" = Some (fact n * (out * S n))).
+  assert (exists v', eval (v $+ ("output", out * S n) $+ ("input", n))
+                     factorial_loop
+                     v'
+                /\ v' $? "output" = Some (fact n * (out * S n))).
   apply IHn.
   simplify; equality.
   simplify; equality.
@@ -225,7 +198,7 @@ Proof.
   rewrite H, H0.
   replace (S n - 1) with n by linear_arithmetic.
   (* [replace e1 with e2 by tac]: replace occurrences of [e1] with [e2], proving
-   *   [e2 = e1] with tactic [tac]. *)
+   * [e2 = e1] with tactic [tac]. *)
   apply H1.
   rewrite H2.
   f_equal.
@@ -238,7 +211,7 @@ Theorem factorial_correct : forall n v, v $? "input" = Some n
 Proof.
   simplify.
   assert (exists v', eval (v $+ ("output", 1)) factorial_loop v'
-                     /\ v' $? "output" = Some (fact n * 1)).
+                /\ v' $? "output" = Some (fact n * 1)).
   apply factorial_loop_correct.
   simplify; equality.
   simplify; equality.
@@ -284,8 +257,9 @@ Inductive step : valuation * cmd -> valuation * cmd -> Prop :=
   -> step (v, While e body) (v, Skip).
 
 (* Here's a small-step factorial execution. *)
-Theorem factorial_2_small : exists v, step^* ($0 $+ ("input", 2), factorial) (v, Skip)
-                                      /\ v $? "output" = Some 2.
+Theorem factorial_2_small : exists v,
+    step^* ($0 $+ ("input", 2), factorial) (v, Skip)
+    /\ v $? "output" = Some 2.
 Proof.
   eexists; propositional.
 
@@ -354,38 +328,68 @@ Proof.
   stepper.
 Qed.
 
-(* It turns out that these two semantics styles are equivalent.  Let's prove
- * it. *)
-
-(* Automated proofs used here, if only to save time in class.
- * See book code for more manual proofs, too. *)
+(** equivalence *)
 
 Hint Constructors trc step eval.
 
-Theorem big_small : forall v c v', eval v c v'
-  -> step^* (v, c) (v', Skip).
+(* congruence rule extended to step^* *)
+Lemma step_star_Seq : forall v c1 c2 v' c1',
+    step^* (v, c1) (v', c1') -> step^* (v, c1 ;; c2) (v', c1' ;; c2).
 Proof.
-Admitted.
+  induct 1; eauto.
+  cases y; eauto.
+Qed.
 
-Theorem small_big : forall v c v', step^* (v, c) (v', Skip)
-                                   -> eval v c v'.
+Hint Resolve step_star_Seq.
+Theorem big_small : forall v c v', eval v c v'  -> step^* (v, c) (v', Skip).
 Proof.
-Admitted.
+  (* induct 1; eauto *)
 
+  (* eapply trc_trans. *)
+  (* apply step_star_Seq. *)
+  (* eassumption. *)
+  (* econstructor. *)
+  (* apply StepSeq2. *)
+  (* assumption. *)
 
+  (* econstructor. *)
+  (* constructor. *)
+  (* assumption. *)
+  (* eapply trc_trans. *)
+  (* eapply step_star_Seq. *)
+  (* eassumption. *)
+  (* econstructor. *)
+  (* apply StepSeq2. *)
+  (* assumption. *)
+  induct 1; eauto 6 using trc_trans.
+Qed.
 
+(* preservation *)
+Lemma small_big'' : forall v c v' c',
+    step (v, c) (v', c') -> forall v'', eval v' c' v'' -> eval v c v''.
+Proof.
+  induct 1; simplify;
+    match goal with
+    | [ H : eval _ _ _ |- _ ] => invert H
+    end; eauto.
+Qed.
 
+Hint Resolve small_big''.
 
+(* extended to step^* *)
+Lemma small_big' : forall v c v' c',
+    step^* (v, c) (v', c') -> forall v'', eval v' c' v'' -> eval v c v''.
+Proof.
+  induct 1; eauto.
+  cases y; eauto.
+Qed.
 
+Hint Resolve small_big'.
 
-
-
-
-
-
-
-
-
+Theorem small_big : forall v c v', step^* (v, c) (v', Skip) -> eval v c v'.
+Proof.
+  eauto.
+Qed.
 
 
 (** * Small-step semantics gives rise to transition systems. *)
@@ -406,6 +410,7 @@ Inductive isEven : nat -> Prop :=
 | EvenO : isEven 0
 | EvenSS : forall n, isEven n -> isEven (S (S n)).
 
+(* Eval compute in 0 - 2.  // 0 *)
 Lemma isEven_minus2 : forall n, isEven n -> isEven (n - 2).
 Proof.
   induct 1; simplify.
@@ -441,46 +446,18 @@ Definition my_loop :=
 
 Theorem manually_proved_invariant : forall n,
   isEven n
-  -> invariantFor (trsys_of ($0 $+ ("n", n) $+ ("a", 0)) (while "n" loop "a" <- "a" + "n";; "n" <- "n" - 2 done))
-               (fun s => exists a, fst s $? "a" = Some a /\ isEven a).
+  -> invariantFor (trsys_of ($0 $+ ("n", n) $+ ("a", 0))
+                           (while "n" loop "a" <- "a" + "n";; "n" <- "n" - 2 done))
+                 (fun s => exists a, fst s $? "a" = Some a /\ isEven a).
 Proof.
 Admitted.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+(** all reachable commands *)
 Definition all_programs := {
   (while "n" loop
      "a" <- "a" + "n";;
      "n" <- "n" - 2
    done),
-  ("a" <- "a" + "n";;
-   "n" <- "n" - 2),
-  (Skip;;
-   "n" <- "n" - 2),
-  ("n" <- "n" - 2),
   (("a" <- "a" + "n";;
     "n" <- "n" - 2);;
    while "n" loop
@@ -508,12 +485,14 @@ Definition all_programs := {
 
 Lemma manually_proved_invariant' : forall n,
   isEven n
-  -> invariantFor (trsys_of ($0 $+ ("n", n) $+ ("a", 0)) (while "n" loop "a" <- "a" + "n";; "n" <- "n" - 2 done))
-               (fun s => all_programs (snd s)
-                         /\ exists n a, fst s $? "n" = Some n
-                                        /\ fst s $? "a" = Some a
-                                        /\ isEven n
-                                        /\ isEven a).
+  -> invariantFor
+      (trsys_of ($0 $+ ("n", n) $+ ("a", 0))
+                (while "n" loop "a" <- "a" + "n";; "n" <- "n" - 2 done))
+      (fun s => all_programs (snd s)
+             /\ exists n a, fst s $? "n" = Some n
+                      /\ fst s $? "a" = Some a
+                      /\ isEven n
+                      /\ isEven a).
 Proof.
   simplify; apply invariant_induction; simplify; unfold all_programs in *; first_order; subst; simplify;
   try match goal with
@@ -547,8 +526,7 @@ Inductive context :=
 Inductive plug : context -> cmd -> cmd -> Prop :=
 | PlugHole : forall c, plug Hole c c
 | PlugSeq : forall c C c' c2,
-  plug C c c'
-  -> plug (CSeq C c2) c (Sequence c' c2).
+    plug C c c' -> plug (CSeq C c2) c (c';; c2).
 
 (* Now we define almost the same step relation as before, with one omission:
  * only the more trivial of the [Sequence] rules remains. *)
@@ -584,37 +562,92 @@ Inductive cstep : valuation * cmd -> valuation * cmd -> Prop :=
 Hint Constructors plug step0 cstep.
 
 Theorem step_cstep : forall v c v' c',
-  step (v, c) (v', c')
-  -> cstep (v, c) (v', c').
+  step (v, c) (v', c')  -> cstep (v, c) (v', c').
 Proof.
-Admitted.
+  induct 1;
+    repeat match goal with
+    | [ H : cstep _ _ |- _ ] => invert H
+    end; eauto.
+Qed.
+
+Hint Resolve step_cstep.
+
+Lemma step0_step : forall v c v' c',
+    step0 (v, c) (v', c') -> step (v, c) (v', c').
+Proof.
+  invert 1; eauto.
+Qed.
+
+Hint Resolve step0_step.
+
+(* step0 to step with contexts *)
+Lemma cstep_step' : forall C c c1,
+    plug C c c1
+    -> forall v' c' v c2, step0 (v, c) (v', c')
+                    -> plug C c' c2
+                    -> step (v, c1) (v', c2).
+Proof.
+  induct 1; simplify;
+    repeat match goal with
+           | [ H : plug _ _ _ |- _ ] => invert1 H
+           end; eauto.
+  (* don't invert if it generates more than 1 subgoals: only invert on fixed context *)
+Qed.
+
+Hint Resolve cstep_step'.
 
 Theorem cstep_step : forall v c v' c',
-  cstep (v, c) (v', c')
-  -> step (v, c) (v', c').
+  cstep (v, c) (v', c') -> step (v, c) (v', c').
 Proof.
-Admitted.
+  invert 1; eauto.
+Qed.
 
 
+(** * Determinism *)
 
+(* Each of the relations we have defined turns out to be deterministic.  Let's
+ * prove it. *)
 
+Theorem eval_det : forall v c v1,
+    eval v c v1 -> forall v2, eval v c v2 -> v1 = v2.
+Proof.
+  induct 1; invert 1; try first_order.
 
+  apply IHeval2.
+  apply IHeval1 in H5.
+  subst.
+  assumption.
 
+  apply IHeval2.
+  apply IHeval1 in H7.
+  subst.
+  assumption.
+Qed.
 
+Theorem step_det : forall s out1,
+    step s out1  -> forall out2, step s out2 -> out1 = out2.
+Proof.
+  induct 1; invert 1; try first_order.
 
+  apply IHstep in H5.
+  equality.
 
+  invert H.
 
+  invert H4.
+Qed.
 
-
-
-
-
-
-
-
-
-
-
+Theorem cstep_det : forall s out1,
+    cstep s out1 -> forall out2, cstep s out2 -> out1 = out2.
+Proof.
+  simplify.
+  cases s; cases out1; cases out2.
+  eapply step_det.
+  apply cstep_step.
+  eassumption.
+  apply cstep_step.
+  eassumption.
+Qed.
 
 (** * Example of how easy it is to add concurrency to a contextual semantics *)
 
@@ -700,14 +733,15 @@ Module Concurrent.
 
   Hint Constructors plug step0 cstep.
 
-  (* The naive "expected" answer is attainable. *)
+  (* The naive "expected" answer is attainable/reachable. *)
   Theorem correctAnswer : forall n, exists v, cstep^* ($0 $+ ("n", n), prog) (v, Skip)
-                                              /\ v $? "n" = Some (n + 2).
+                                    /\ v $? "n" = Some (n + 2).
   Proof.
-    eexists; propositional.
-    unfold prog.
+    eexists; propositional; unfold prog.
 
     econstructor.
+    (* ("a" <- "n";; "n" <- "a" + 1) || ("b" <- "n";; "n" <- "b" + 1)
+     *  ^^^^^^^^^^ manually provide unplugging method *)
     eapply CStep with (C := CPar1 (CSeq Hole _) _); eauto.
 
     econstructor.
@@ -739,9 +773,34 @@ Module Concurrent.
   Theorem wrongAnswer : forall n, exists v, cstep^* ($0 $+ ("n", n), prog) (v, Skip)
                                             /\ v $? "n" = Some (n + 1).
   Proof.
-    eexists; propositional.
-    unfold prog.
-  Admitted.
+    eexists; propositional; unfold prog.
+
+    econstructor.
+    eapply CStep with (C := CPar1 (CSeq Hole _) _); eauto.
+
+    econstructor.
+    eapply CStep with (C := CPar2 _ (CSeq Hole _)); eauto.
+
+    econstructor.
+    eapply CStep with (C := CPar1 Hole _); eauto.
+
+    econstructor.
+    eapply CStep with (C := CPar2 _ Hole); eauto.
+
+    econstructor.
+    eapply CStep with (C := CPar1 Hole _); eauto.
+
+    econstructor.
+    eapply CStep with (C := Hole); eauto.
+
+    econstructor.
+    eapply CStep with (C := Hole); eauto.
+
+    econstructor.
+
+    simplify.
+    equality.
+  Qed.
 
 
   (** Proving equivalence with non-contextual semantics *)
@@ -783,57 +842,47 @@ Module Concurrent.
   (* Now, an automated proof of equivalence.  Actually, it's *exactly* the same
    * proof we used for the old feature set!  For full dramatic effect, copy and
    * paste here from above. *)
+
+
+  Hint Constructors plug step0 cstep.
+
+  Theorem step_cstep : forall v c v' c',
+      step (v, c) (v', c')  -> cstep (v, c) (v', c').
+  Proof.
+    induct 1;
+      repeat match goal with
+             | [ H : cstep _ _ |- _ ] => invert H
+             end; eauto.
+  Qed.
+
+  Hint Resolve step_cstep.
+
+  Lemma step0_step : forall v c v' c',
+      step0 (v, c) (v', c') -> step (v, c) (v', c').
+  Proof.
+    invert 1; eauto.
+  Qed.
+
+  Hint Resolve step0_step.
+
+  Lemma cstep_step' : forall C c c1,
+      plug C c c1
+      -> forall v' c' v c2, step0 (v, c) (v', c')
+                      -> plug C c' c2
+                      -> step (v, c1) (v', c2).
+  Proof.
+    induct 1; simplify;
+      repeat match goal with
+             | [ H : plug _ _ _ |- _ ] => invert1 H
+             end; eauto.
+  Qed.
+
+  Hint Resolve cstep_step'.
+
+  Theorem cstep_step : forall v c v' c',
+      cstep (v, c) (v', c') -> step (v, c) (v', c').
+  Proof.
+    invert 1; eauto.
+  Qed.
 End Concurrent.
 
-
-(** * Determinism *)
-
-(* Each of the relations we have defined turns out to be deterministic.  Let's
- * prove it. *)
-
-Theorem eval_det : forall v c v1,
-  eval v c v1
-  -> forall v2, eval v c v2
-  -> v1 = v2.
-Proof.
-  induct 1; invert 1; try first_order.
-
-  apply IHeval2.
-  apply IHeval1 in H5.
-  subst.
-  assumption.
-
-  apply IHeval2.
-  apply IHeval1 in H7.
-  subst.
-  assumption.
-Qed.
-
-Theorem step_det : forall s out1,
-  step s out1
-  -> forall out2, step s out2
-  -> out1 = out2.
-Proof.
-  induct 1; invert 1; try first_order.
-
-  apply IHstep in H5.
-  equality.
-
-  invert H.
-
-  invert H4.
-Qed.
-
-Theorem cstep_det : forall s out1,
-  cstep s out1
-  -> forall out2, cstep s out2
-  -> out1 = out2.
-Proof.
-  simplify.
-  cases s; cases out1; cases out2.
-  eapply step_det.
-  apply cstep_step.
-  eassumption.
-  apply cstep_step.
-  eassumption.
-Qed.
