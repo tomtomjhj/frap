@@ -2,6 +2,10 @@ Require Import Frap.
 
 Set Implicit Arguments.
 Set Asymmetric Patterns.
+(** * Proof by Reflection
+ * translate Gallina propositions into values of inductive types representing
+ * syntax, so that Gallina programs may analyze them, and translate such a term
+ * back to the original form *)
 
 
 (** * Proving Evenness *)
@@ -10,26 +14,87 @@ Inductive isEven : nat -> Prop :=
 | Even_O : isEven O
 | Even_SS : forall n, isEven n -> isEven (S (S n)).
 
-Theorem even_256 : isEven 256.
+Ltac prove_even := repeat constructor.
+
+Theorem even_6 : isEven 6.
 Proof.
-Admitted.
+  prove_even.
+Qed.
 
+Set Printing All.
+Print even_6.
+(* Even_SS : forall (n : nat) (_ : isEven n), isEven (S (S n)) *)
+Unset Printing All.
 
+(* - Choice of [n] for each [Even_SS] application -> n^2 size proof term.
+ * - Static typing does not guarantee that our tactic always behaves
+ *   appropriately.  Other invocations of similar tactics might fail with
+ *   dynamic type errors.
+ * The techniques of proof by reflection address both complaints. *)
 
+(* verified decision procedure in Gallina *)
+Fixpoint check_even (n : nat) : bool :=
+  match n with
+  | 0 => true
+  | 1 => false
+  | S (S n') => check_even n'
+  end.
 
+(* To prove [check_even] sound, we need two IH strengthenings:
+ * - Switch to _strong induction_ [n' < n]
+ * - Express both cases for how a [check_even] test might turn out. *)
+Lemma check_even_ok' : forall n n',
+    n' < n -> if check_even n' then isEven n' else ~isEven n'.
+Proof.
+  (* [not = fun A : Prop => A -> False : Prop -> Prop] *)
+  induct n; simplify.
+  invert H.
+  cases n'; simplify.
+  constructor.
+  cases n'; simplify.
+  propositional.
+  invert H0.
+  specialize (IHn n').
+  cases (check_even n').
+  constructor.
+  apply IHn.
+  linear_arithmetic.
+  propositional.
+  invert H0.
+  apply IHn.
+  linear_arithmetic.
+  assumption.
+Qed.  
 
+Theorem check_even_ok : forall n, check_even n = true -> isEven n.
+Proof.
+  simplify.
+  assert (n < S n) by linear_arithmetic.
+  apply check_even_ok' in H0.
+  rewrite H in H0.
+  assumption.
+Qed.
 
+(* reflective tactic using verified decision process
+ * - proof-search process wholly within Gallina *)
+Ltac prove_even_reflective :=
+  match goal with
+  | [ |- isEven ?N ] => apply check_even_ok; reflexivity
+  end.
 
+Theorem even_8 : isEven 8.
+Proof.
+  prove_even_reflective.
+Qed.
 
+Set Printing All.
+Print even_8.
+Unset Printing All.
 
-
-
-
-
-
-
-
-
+Theorem even_7 : isEven 7.
+Proof.
+  (* prove_even_reflective. *)
+Abort.
 
 
 (** * Reifying the Syntax of a Trivial Tautology Language *)
@@ -39,21 +104,67 @@ Proof.
   tauto.
 Qed.
 
-Print true_galore.
+Print true_galore. (* overheads *)
 
+(* To write a reflective procedure for this class of goals, we need to get into
+ * the actual "reflection" part of "proof by reflection."  It is impossible
+ * to case-analyze a [Prop] in any way in Gallina.  We must _reify_ [Prop] into
+ * some type that we _can_ analyze. This inductive type is a good candidate:
+ *)
 
+Inductive taut : Set :=
+| TautTrue : taut
+| TautAnd : taut -> taut -> taut
+| TautOr : taut -> taut -> taut
+| TautImp : taut -> taut -> taut.
 
+(* reflect the syntax back to Prop (interpretation function ) *)
+Fixpoint tautDenote (t : taut) : Prop :=
+  match t with
+    | TautTrue => True
+    | TautAnd t1 t2 => tautDenote t1 /\ tautDenote t2
+    | TautOr t1 t2 => tautDenote t1 \/ tautDenote t2
+    | TautImp t1 t2 => tautDenote t1 -> tautDenote t2
+  end.
 
+Theorem tautTrue : forall t, tautDenote t.
+Proof.
+  induct t; simplify; propositional.
+Qed.
 
+(* reify to syntax *)
+Ltac tautReify P :=
+  match P with
+    | True => TautTrue
+    | ?P1 /\ ?P2 =>
+      let t1 := tautReify P1 in
+      let t2 := tautReify P2 in
+        constr:(TautAnd t1 t2)
+    | ?P1 \/ ?P2 =>
+      let t1 := tautReify P1 in
+      let t2 := tautReify P2 in
+        constr:(TautOr t1 t2)
+    | ?P1 -> ?P2 =>
+      let t1 := tautReify P1 in
+      let t2 := tautReify P2 in
+        constr:(TautImp t1 t2)
+  end.
 
+(* [change] the goal to reified goal, then tautTrue *)
+Ltac obvious :=
+  match goal with
+    | [ |- ?P ] =>
+      let t := tautReify P in
+      change (tautDenote t); apply tautTrue
+  end.
+Theorem true_galore' : (True /\ True) -> (True \/ (True /\ (True -> True))).
+Proof.
+  obvious.
+Qed.
 
-
-
-
-
-
-
-
+Set Printing All.
+Print true_galore'.
+Unset Printing All.
 
 
 

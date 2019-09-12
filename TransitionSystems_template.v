@@ -26,7 +26,7 @@ Inductive fact_state :=
 | WithAccumulator (input accumulator : nat).
 
 (* *Initial* states *)
-(* PREDICATE. 
+(* PREDICATE.
  - parameters (before main colon): stay fixed throughout rec invoc of pred
  - followed by type expressing additional args, followed by [Prop]
 *)
@@ -55,7 +55,7 @@ Inductive trc {A} (R : A -> A -> Prop) : A -> A -> Prop :=
 
 Print True.
 Print False.
- 
+
 Inductive isZero : nat -> Prop :=
 | IsZero : isZero 0.
 Theorem isZero_contra : isZero 1 -> False.
@@ -63,17 +63,17 @@ Proof.
   destruct 1.
   Undo.
   (* restriction in tactics like destruct and induction when applied to types with arguments:
-   * If the arguments are not already free variables, they will be replaced by new free 
+   * If the arguments are not already free variables, they will be replaced by new free
    * variables internally before doing the case analysis or induction.
    * "logically complete case analysis" is undecidable in Coq logic. *)
    intro. inversion H. (* inversion 1. *)
    (* Think of it as a version of destruct that does its best to take advantage of
-    * the structure of arguments to inductive types. 
+    * the structure of arguments to inductive types.
     * In this case, using isZero with an impossible argument -> done *)
 Qed.
 
 
-(* induction on Prop. 
+(* induction on Prop.
 http://www.cs.cornell.edu/~clarkson/courses/csci6907/2014sp/terse/MoreInd.html
 http://www.cs.cornell.edu/~clarkson/courses/csci6907/2014sp/sf/ProofObjects.html
 *)
@@ -85,7 +85,7 @@ Check le_ind.
 (* [dependent induction]
  * From an instantiated inductive predicate and a goal, it generates an
  * equivalent goal where the hypothesis has been generalized over its ^indexes^
- * which are then constrained by equalities to be the right instances. 
+ * which are then constrained by equalities to be the right instances.
  *)
 Lemma le_minus : forall n:nat, n < 1 -> n = 0.
 Proof.
@@ -111,7 +111,7 @@ trc_ind
        (forall x : A, P x x) ->
        (forall x y z : A, R x y -> trc R y z -> P y z -> P x z) ->
        forall y y0 : A, trc R y y0 -> P y y0
- 
+
   match goal with
     | [ |- forall x : ?E, _ ] => (* forall x ????????????*)
       match type of E with
@@ -124,18 +124,18 @@ trc_ind
   simplify. induct H.
   (* rule induction on derivation of [trc R x y] *)
   assumption.
-  
+
   (*apply TrcFront. ** Error: Unable to find an instance for the variable y.*)
   eapply TrcFront.
   (*behaves like apply but it does not fail when no instantiations are deducible
-    for some variables in the premises. Rather, it turns these variables into 
+    for some variables in the premises. Rather, it turns these variables into
     ^existential^ variables which are variables still to instantiate. *)
   eassumption. (* instantiation *)
-  
+
   apply IHtrc.
   assumption.
 Qed.
-  
+
 
 (* Transitive-reflexive closure is so common that it deserves a shorthand notation! *)
 Notation "R ^*" := (trc R) (at level 0).
@@ -278,21 +278,21 @@ Theorem fact_invariant_ok : forall original_input,
 Proof.
   simplify.
   apply invariant_induction; simplify.
-  
+
   (* Base case: invar holds at the start *)
   (* H: fact_init original_input s -> can fraw concl about what [s] must be. *)
   inversion H; clear H; subst. (* invert H. *)
   simplify; ring.
-  
+
   (* Ind Step: Steps preserve the invar *)
-  invert H0. 
+  invert H0.
   Print fact_step.
   simplify; linear_arithmetic.
-  
+
   simplify.
   rewrite H.
   ring.
-Qed.  
+Qed.
 
 
 (* Therefore, every reachable state satisfies this invariant. *)
@@ -474,7 +474,7 @@ Definition instruction_ok (self other : increment_program): Prop :=
   | Read | Unlock => has_lock other = false
   | Write n => has_lock other = false /\ n = contribution_from other
   | Done => True
-  end. 
+  end.
 
 (** We must write an invariant. *)
 Inductive increment2_invariant :
@@ -542,14 +542,14 @@ Proof.
   simplify.
   eapply use_invariant.
   apply invariant_weaken with (invariant1 := increment2_invariant).
-  
+
   apply increment2_invariant_ok.
-  
+
   simplify.
   invert H0.
   unfold increment2_right_answer; simplify.
   invert H0. (* H0 : (pr1, pr2) = (Done, Done) *)
   simplify; equality.
-  
+
   assumption.
 Qed.

@@ -73,6 +73,16 @@ Module SimpleMixed.
   | Let (e1 : exp) (e2 : nat -> exp).
   (* Note a [Let] body is a *function* over the computed value attached to the
    * variable being bound. *)
+(* exp_ind *)
+(*      : forall P : exp -> Prop, *)
+(*        (forall n : nat, P (Const n)) -> *)
+(*        (forall x : var, P (Var x)) -> *)
+(*        (forall e1 : exp, P e1 -> forall e2 : exp, P e2 -> P (Plus e1 e2)) -> *)
+(*        (forall e1 : exp, P e1 -> forall e2 : exp, P e2 -> P (Times e1 e2)) -> *)
+(*        (forall e1 : exp, *)
+(*         P e1 -> forall e2 : nat -> exp, (forall n : nat, P (e2 n)) -> P (Let e1 e2)) -> *)
+(*        forall e : exp, P e *)
+
 
   Definition foo : exp :=
     Let (Plus (Var "x") (Var "y"))
@@ -146,9 +156,10 @@ Proof.
 Qed.
 
 
-(** * Shallow embedding of a language very similar to the one we used last chapter *)
+(** * Shallow embedding of a simple imperative language *)
 
 Module Shallow.
+  (* imperative programs as fp that explicitly manipulate heaps *)
   Definition cmd result := heap -> heap * result.
 
   Definition hoare_triple (P : assertion) {result} (c : cmd result) (Q : result -> assertion) :=
@@ -271,7 +282,8 @@ Module Shallow.
 End Shallow.
 
 
-(** * A basic deep embedding *)
+(** * A basic mixed embedding *)
+(* - TODO: poor performance of shallow embedding ??  *)
 
 Module Deep.
   Inductive cmd : Set -> Type :=
@@ -299,6 +311,7 @@ Module Deep.
       increment_all i'
     end.
 
+  (* Gallina constructs mixed w/ obj lang instructions *)
   Fixpoint interp {result} (c : cmd result) (h : heap) : heap * result :=
     match c with
     | Return _ r => (h, r)
@@ -337,8 +350,10 @@ Module Deep.
 
   | HtRead : forall P a,
       hoare_triple P (Read a) (fun r h => P h /\ r = h $! a)
+
   | HtWrite : forall P a v,
       hoare_triple P (Write a v) (fun _ h => exists h', P h' /\ h = h' $+ (a, v))
+                   (* h' for prev heap *)
   | HtConsequence : forall {result} (c : cmd result) P Q (P' : assertion) (Q' : _ -> assertion),
       hoare_triple P c Q
       -> (forall h, P' h -> P h)
@@ -427,6 +442,8 @@ Module Deeper.
         Return (Again (S i))
     done.
 
+  (* single step interpreter. can't write a straightforward
+     big-stepping interpeter, as programs can diverge. *)
   Inductive stepResult (result : Set) :=
   | Answer (r : result)
   | Stepped (h : heap) (c : cmd result). 
@@ -790,10 +807,44 @@ Module DeeperWithFail.
       hoare_triple (fun _ => False) (Fail (result := result)) (fun _ _ => False).
     (* The rule for [Fail] simply enforces that this command can't be reachable,
      * since it gets an unsatisfiable precondition. *)
+(* hoare_triple_ind *)
+(*      : forall *)
+(*          P : assertion -> forall result : Set, cmd result -> (result -> assertion) -> Prop, *)
+(*        (forall (P0 : assertion) (result : Set) (v : result), *)
+(*         P P0 result (Return v) (fun (r : result) (h : heap) => P0 h /\ r = v)) -> *)
+(*        (forall (P0 : assertion) (result' result : Set) (c1 : cmd result') *)
+(*           (c2 : result' -> cmd result) (Q : result' -> assertion)  *)
+(*           (R : result -> assertion), *)
+(*         {{h ~> P0 h}} c1 {{r & h' ~> Q r h'}} -> *)
+(*         P P0 result' c1 Q -> *)
+(*         (forall r : result', {{h ~> Q r h}} c2 r {{r & h' ~> R r h'}}) -> *)
+(*         (forall r : result', P (Q r) result (c2 r) R) -> P P0 result (x <- c1; c2 x) R) -> *)
+(*        (forall (P0 : assertion) (a : nat), *)
+(*         P P0 nat (Read a) (fun (r : nat) (h : heap) => P0 h /\ r = h $! a)) -> *)
+(*        (forall (P0 : assertion) (a v : nat), *)
+(*         P P0 unit (Write a v) *)
+(*           (fun (_ : unit) (h : heap) => exists h' : heap, P0 h' /\ h = h' $+ (a, v))) -> *)
+(*        (forall (result : Set) (c : cmd result) (P0 : assertion)  *)
+(*           (Q : result -> assertion) (P' : assertion) (Q' : result -> assertion), *)
+(*         {{h ~> P0 h}} c {{r & h' ~> Q r h'}} -> *)
+(*         P P0 result c Q -> *)
+(*         (forall h : heap, P' h -> P0 h) -> *)
+(*         (forall (r : result) (h : heap), Q r h -> Q' r h) -> P P' result c Q') -> *)
+(*        (forall (acc : Set) (init : acc) (body : acc -> cmd (loop_outcome acc)) *)
+(*           (I : loop_outcome acc -> assertion), *)
+(*         (forall acc0 : acc, {{h ~> I (Again acc0) h}} body acc0 {{r & h' ~> I r h'}}) -> *)
+(*         (forall acc0 : acc, P (I (Again acc0)) (loop_outcome acc) (body acc0) I) -> *)
+(*         P (I (Again init)) acc (for x := init loop body x done) *)
+(*           (fun (r : acc) (h : heap) => I (Done r) h)) -> *)
+(*        (forall result : Set, *)
+(*         P (fun _ : heap => False) result Fail (fun (_ : result) (_ : heap) => False)) -> *)
+(*        forall (a : assertion) (result : Set) (c : cmd result) (a0 : result -> assertion), *)
+(*        {{h ~> a h}} c {{r & h' ~> a0 r h'}} -> P a result c a0 *)
 
   Notation "{{ h ~> P }} c {{ r & h' ~> Q }}" :=
     (hoare_triple (fun h => P) c (fun r h' => Q)) (at level 90, c at next level).
 
+  (* 'weaken' and 'strengthen' are mixed up lol *)
   Lemma HtStrengthen : forall {result} (c : cmd result) P Q (Q' : _ -> assertion),
       hoare_triple P c Q
       -> (forall r h, Q r h -> Q' r h)
@@ -828,7 +879,14 @@ Module DeeperWithFail.
       forever
     {{ _&_ ~> False }}.
   Proof.
-  Admitted.
+    ht.
+    loop_inv
+      (fun (r : loop_outcome nat) h =>
+         h $! 0 > 0 /\
+         match r with | Done _ => False | _ => True end).
+    cases r1; ht.
+  Qed.
+  
 
   Definition trsys_of {result} (c : cmd result) (h : heap) := {|
     Initial := {(c, h)};
@@ -875,7 +933,7 @@ Module DeeperWithFail.
     hoare_triple P (Read a) Q
     -> forall h, P h -> Q (h $! a) h.
   Proof.
-    induct 1; propositional; eauto.
+    induct 1; propositional; eauto. (* what's JMeq things? *)
     apply unit_not_nat in x0.
     propositional.
   Qed.
@@ -967,10 +1025,10 @@ Module DeeperWithFail.
   Lemma hoare_triple_sound' : forall P {result} (c : cmd result) Q,
       hoare_triple P c Q
       -> forall h, P h
-                   -> invariantFor (trsys_of c h)
-                                   (fun p => hoare_triple (fun h => h = snd p)
-                                                          (fst p)
-                                                          Q).
+             -> invariantFor (trsys_of c h)
+                            (fun p => hoare_triple (fun h => h = snd p)
+                                                (fst p)
+                                                Q).
   Proof.
     simplify.
 
@@ -990,8 +1048,8 @@ Module DeeperWithFail.
   Theorem hoare_triple_sound : forall P {result} (c : cmd result) Q,
       hoare_triple P c Q
       -> forall h, P h
-                   -> invariantFor (trsys_of c h)
-                                   (fun p => step (fst p) (snd p) <> Failed).
+             -> invariantFor (trsys_of c h)
+                            (fun p => step (fst p) (snd p) <> Failed).
   Proof.
     simplify.
 
@@ -1060,7 +1118,20 @@ Module DeeperWithFail.
        {{r&h ~> (forall i, i < length ls -> h $! i = nth_default 0 ls i)
            /\ r = fold_left f ls init}}.
   Proof.
-  Admitted.
+    ht.
+    loop_inv
+      (fun r h =>
+         (forall i, i < length ls -> h $! i = nth_default 0 ls i) /\
+         match r with
+         | Done (_, acc) => acc = fold_left f ls init
+         | Again (i, acc) => acc = fold_left f (firstn i ls) init
+         end).
+    cases (length ls <=? a); ht; auto; simp; auto.
+    rewrite H2 by assumption.
+    simplify.
+    reflexivity.
+    simp; auto. simp.
+  Qed.
 
 
   Definition array_max (len : nat) : cmd nat :=
@@ -1095,5 +1166,11 @@ Module DeeperWithFail.
       array_max (length ls)
     {{ r&h ~> forall i, i < length ls -> h $! i <= r }}.
   Proof.
-  Admitted.
+    conseq.
+    apply heapfold_ok with (f:=max); ht.
+    simp; auto.
+    simp.
+    rewrite H1 by assumption.
+    auto.
+  Qed.
 End DeeperWithFail.
